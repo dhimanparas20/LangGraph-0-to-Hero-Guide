@@ -14,6 +14,7 @@ A full 0-to-hero LangGraph course: **12 fundamental lessons → 6 pro topics →
 | `chatbot.py` + `modules/` | Part 4 — the main CLI chatbot app (RAG + tools + MCP + Mongo + Redis) | below |
 | `reference/` | The full API reference — every core function's parameters & returns, in Google-style docstrings | [reference/langgraph_api_reference.py](reference/langgraph_api_reference.py) |
 | `pdfs/`, `chroma_db/` | Your documents and their embedded index (gitignored) | — |
+| `datastore/` | The agent's file sandbox (kept in git via `.gitkeep`) | — |
 
 ---
 
@@ -219,14 +220,15 @@ for update in app.stream(input, config, stream_mode="updates"):   ...
 |---|---|---|
 | PDF knowledge base | `pdfs/` | Drop PDFs here. First run embeds them all into `chroma_db/` (persistent); later runs just load the index. Delete `chroma_db/` to re-ingest. |
 | Agent | `chatbot.py` | `create_agent` (modern API) + ToolNode — the model decides when to use which tool (no manual dispatch). |
-| Tools | `modules/tools/` (package) | `calculator`; `get_weather`, `get_distance`, `get_currency_rate`, `search_wikipedia` (free, no-key APIs); `get_current_time`, `convert_time`, `time_between` (built on `modules/datetime_parser.py` — any human phrase, 100+ timezone aliases). Split into `math_tools.py`, `web_tools.py`, `datetime_tools.py`, `cache.py`, combined in `__init__.py`. |
-| PDF search | `chatbot.py` (`search_pdfs`) | Chroma similarity search over your documents — added on top of the built-ins. |
+| Tools | `modules/tools/` (package) | `calculator`; `get_weather`, `get_distance`, `get_currency_rate`, `search_wikipedia` (free, no-key APIs); `get_current_time`, `convert_time`, `time_between` (built on `modules/datetime_parser.py`); `fetch_url` (any web page → clean text). Split into `math_tools.py`, `web_tools.py`, `datetime_tools.py`, `url_tools.py`, `file_tools.py`, `mcp_tools.py`, `cache.py`, combined in `__init__.py`. |
+| File sandbox | `modules/tools/file_tools.py` + `datastore/` | 7 sandboxed file tools (`write_file`, `read_file`, `list_directory`, `file_search`, `move_file`, `copy_file`, `file_delete`) via `FileManagementToolkit` — the agent can only touch files INSIDE `datastore/` (escape attempts are denied; paths are relative to it). |
+| PDF/URL search | `chatbot.py` (`search_pdfs`) | Chroma similarity search over the knowledge base — PDFs from `./pdfs` PLUS any web page you add at runtime with `/url <link>` (fetched, chunked, embedded, persisted; re-ingesting a URL replaces its chunks). `/sources` lists everything in the store. |
 | MCP servers | `modules/tools/mcp_tools.py` | Connect ANY MCP server — local stdio (`uvx`/`uv`/`npx`), local HTTP, or remote with auth headers. Toggle with `MCP_ENABLED=true` in `.env` (default off). One dead server never blocks the rest; async MCP tools are auto-bridged so the sync chatbot can call them. |
 | Logging | `modules/logger.py` | Production `get_logger()` — SUCCESS level, JSON or colorized output, trace/context IDs, rotation, secret redaction. Import where needed. |
 | Chat log | `modules/mongo_utils.py` (`MongoUtil`) | Every message (human/ai/tool) written to MongoDB `langgraph_chatbot.messages`, message-by-message. Optional — chatbot runs fine without Mongo. |
 | Cache | `modules/redis_utils.py` (`RedisStringUtil`) | Web tool results cached in Redis (weather 10 min, currency 1 h, distances/wiki 1 day). Optional — runs fine without Redis. |
 
-**CLI commands:** `/help`, `/tools`, `/history`, `/new`, and `/q` / `/quit` / `/exit` to quit. While answering, it prints progress (`[agent]` / `[tools]`) so you can watch the agent loop work (lesson 9 streaming).
+**CLI commands:** `/help`, `/tools`, `/history`, `/sources` (list the knowledge base), `/url <link>` (embed a web page into the knowledge base), `/new`, and `/q` / `/quit` / `/exit` to quit. While answering, it prints progress (`[model]` / `[tools]`) so you can watch the agent loop work (lesson 9 streaming).
 
 **Env vars** (see `.env.sample`; copy to `.env`): `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_EMBEDDINGS_MODEL`, `MONGO_URI` (optional), `REDIS_URL` (optional), `MCP_ENABLED` (optional). Mongo, Redis, and MCP all degrade gracefully — a 2-second probe at startup, and if they're down the chatbot says so and continues.
 

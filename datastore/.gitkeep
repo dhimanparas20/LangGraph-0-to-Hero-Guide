@@ -1,0 +1,3 @@
+# Keeps the datastore/ directory in git - the agent's file sandbox.
+# The chatbot can write, read, list, search, move, copy and delete files
+# INSIDE this directory only (FileManagementToolkit root_dir sandbox).

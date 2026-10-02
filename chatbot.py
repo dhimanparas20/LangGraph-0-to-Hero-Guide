@@ -51,6 +51,9 @@ VECTORSTORE = None
 # MCP tools loaded at startup when MCP_ENABLED=true (see modules/tools/mcp_tools.py)
 MCP_EXTRA_TOOLS = []
 
+# sandboxed file tools for the datastore/ directory (always on)
+FILE_TOOLS = []
+
 
 # =====================================================================
 # 1. VECTOR STORE: ingest PDFs on first run, load them on later runs
@@ -105,14 +108,14 @@ def build_vectorstore():
 
 @tool
 def search_pdfs(query: str) -> str:
-    """Search the user's PDF documents (./pdfs folder knowledge base).
+    """Search the user's documents (PDFs from ./pdfs and web pages added via /url).
     Use this for ANY question that might be answered by the user's own documents.
 
     Args:
-        query: the search phrase to look for in the PDFs.
+        query: the search phrase to look for in the knowledge base.
 
     Returns:
-        The most relevant PDF excerpts, labeled with their source file.
+        The most relevant excerpts, labeled with their source (file or URL).
     """
     docs = VECTORSTORE.similarity_search(query, k=3)
     if not docs:
@@ -219,8 +222,10 @@ def tool_box_list() -> list:
         tool_box.get_current_time,
         tool_box.convert_time,
         tool_box.time_between,
+        tool_box.fetch_url,
     ]
     result.extend(MCP_EXTRA_TOOLS)
+    result.extend(FILE_TOOLS)
     if VECTORSTORE is not None:
         result.append(search_pdfs)
     return result
@@ -246,11 +251,67 @@ def build_agent():
             "Use search_pdfs for anything that might be in the user's PDF documents. "
             "Use the calculator for math, the time tools for any current-time, timezone "
             "conversion or duration question, the web tools for weather, distances, "
-            "currency rates and Wikipedia lookups, and any web-search tools for "
-            "questions needing fresh information from the internet. Be concise and friendly."
+            "currency rates and Wikipedia lookups, fetch_url to read any link the user "
+            "shares, the file tools to manage files in the datastore sandbox "
+            "(file paths are RELATIVE to it: 'notes.txt' means datastore/notes.txt), "
+            "and any web-search tools for questions needing fresh information "
+            "from the internet. Be concise and friendly."
         ),
         checkpointer=InMemorySaver(),   # memory within this session (thread per session)
     )
+
+
+def ingest_url(url: str) -> None:
+    """Fetches a web page and embeds it into the persistent knowledge base.
+
+    The page text is fetched (modules/tools/url_tools), split into chunks,
+    and added to the chroma_db/ Chroma store with the URL as its source -
+    so later questions can retrieve it via search_pdfs. Re-ingesting the
+    same URL replaces its old chunks.
+
+    Args:
+        url: the page URL (http:// or https://).
+    """
+    global VECTORSTORE
+
+    from modules.tools.url_tools import fetch_url_text
+
+    try:
+        text = fetch_url_text(url)
+    except Exception as error:
+        print("  error: " + str(error))
+        return
+
+    # create the store on demand if the first run had no PDFs at all
+    if VECTORSTORE is None:
+        embeddings = OpenAIEmbeddings(model=os.getenv("OPENAI_EMBEDDINGS_MODEL", "text-embedding-3-small"))
+        VECTORSTORE = Chroma(persist_directory=str(CHROMA_DIR), embedding_function=embeddings)
+        print("  (note: created a fresh vector store - restart to get the search_pdfs tool)")
+
+    # replace any previous chunks from this same URL
+    existing = VECTORSTORE.get(where={"source": url})
+    if existing and existing.get("ids"):
+        VECTORSTORE.delete(ids=existing["ids"])
+
+    chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_text(text)
+    docs = [Document(page_content=chunk, metadata={"source": url}) for chunk in chunks]
+    VECTORSTORE.add_documents(docs)
+    print("  ingested " + str(len(chunks)) + " chunks from " + url)
+
+
+def print_sources() -> None:
+    """Lists every source in the knowledge base with its chunk count."""
+    if VECTORSTORE is None:
+        print("  (knowledge base is empty)")
+        return
+    data = VECTORSTORE.get(include=["metadatas"])
+    counts = {}
+    for meta in data["metadatas"]:
+        source = meta.get("source", "unknown")
+        counts[source] = counts.get(source, 0) + 1
+    print("  knowledge base (" + str(len(data["metadatas"])) + " chunks):")
+    for source in sorted(counts):
+        print("   - " + str(counts[source]) + " chunks | " + source)
 
 
 # =====================================================================
@@ -262,6 +323,8 @@ commands:
   /help     show this help
   /tools    list available tools
   /history  show this session's messages
+  /sources  list everything in the knowledge base (PDFs + ingested URLs)
+  /url <link>  fetch a web page and embed it into the knowledge base
   /new      start a fresh session (clears the chat)
   /q        quit (also /quit or /exit)
 anything else is sent to the chatbot.
@@ -332,6 +395,8 @@ def main() -> None:
         print("[setup] mongo: chat will be logged to langgraph_chatbot.messages")
     init_cache()
 
+    FILE_TOOLS.extend(tool_box.load_file_management_tools())
+
     if tool_box.mcp_enabled():
         print("[setup] mcp: MCP_ENABLED is on - connecting to MCP servers...")
         MCP_EXTRA_TOOLS.extend(tool_box.load_mcp_tools())
@@ -366,6 +431,10 @@ def main() -> None:
                 print("  - " + t.name + ": " + t.description.strip().split("\n")[0])
         elif text == "/history":
             print_history(agent, config)
+        elif text == "/sources":
+            print_sources()
+        elif text.startswith("/url "):
+            ingest_url(text[5:].strip())
         elif text == "/new":
             session_id = uuid.uuid4().hex[:8]
             config = {"configurable": {"thread_id": session_id}}
