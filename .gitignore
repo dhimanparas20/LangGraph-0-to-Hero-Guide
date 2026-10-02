@@ -18,3 +18,7 @@ wheels/
 chroma_db/
 pdfs/
 chat_memory.db
+
+# Agent file sandbox: keep the folder (.gitkeep) but ignore runtime contents
+datastore/*
+!datastore/.gitkeep

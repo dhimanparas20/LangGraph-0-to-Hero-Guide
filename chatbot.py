@@ -333,18 +333,157 @@ def print_sources() -> None:
 
 
 # =====================================================================
-# 5. CLI LOOP
+# 5. CLI COMMANDS
+# =====================================================================
+
+def clear_session(agent, config: dict, session_id: str) -> None:
+    """Forgets the session's conversation and clears the web tool cache.
+
+    Deletes the thread's checkpoints (the conversation memory) and, when
+    Redis is reachable, every CHATBOT:CACHE:* entry so web tools fetch
+    fresh data again.
+
+    Args:
+        agent: the compiled agent runnable.
+        config: thread config identifying the session.
+        session_id: the session id, for reporting.
+    """
+    forgot_conversation = False
+    try:
+        agent.checkpointer.delete_thread(session_id)
+        forgot_conversation = True
+    except Exception:
+        # very old savers have no delete_thread - fall back to a new session
+        pass
+
+    cache_cleared = 0
+    if tool_box.redis_available():
+        from modules.clients import r
+
+        keys = r.keys("CHATBOT:CACHE:*")
+        if keys:
+            cache_cleared = r.delete(*keys)
+
+    if forgot_conversation:
+        console.print("[dim]conversation cleared (this session starts fresh)[/]")
+    else:
+        console.print("[yellow]checkpointer cannot delete - starting a NEW session instead[/]")
+    console.print("[dim]web cache cleared: " + str(cache_cleared) + " entries[/]")
+
+
+def show_status(agent, config: dict, session_id: str, logger: ChatLogger) -> None:
+    """Prints session info and the live state of every optional service.
+
+    Args:
+        agent: the compiled agent runnable.
+        config: thread config identifying the session.
+        session_id: the current session id.
+        logger: the Mongo ChatLogger (its enabled flag is reported).
+    """
+    state = agent.get_state(config)
+    message_count = len(state.values.get("messages", [])) if state.values else 0
+
+    kb_chunks = 0
+    if VECTORSTORE is not None:
+        kb_chunks = len(VECTORSTORE.get(include=["metadatas"])["metadatas"])
+
+    table = Table(title="status", show_header=False)
+    table.add_column(style="bold cyan")
+    table.add_column()
+    table.add_row("session", session_id + "  (" + str(message_count) + " messages)")
+    table.add_row("model", os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+    table.add_row("tools", str(len(tool_box_list())))
+    table.add_row("mongo logging", "ON" if logger.enabled else "off")
+    table.add_row("redis memory", "ON" if REDIS_TOOLS else "off")
+    table.add_row("mcp tools", str(len(MCP_EXTRA_TOOLS)) + " connected" if MCP_EXTRA_TOOLS else "off")
+    table.add_row("file sandbox", str(len(FILE_TOOLS)) + " tools at " + str(tool_box.DATASTORE_DIR))
+    table.add_row("knowledge base", str(kb_chunks) + " chunks")
+    console.print(table)
+
+
+def show_memory() -> None:
+    """Lists the keys in the agent's long-term Redis memory (REDIS_OPS:*)."""
+    if not tool_box.redis_available():
+        console.print("[dim]redis memory: off[/]")
+        return
+    from modules.clients import r
+
+    keys = sorted(r.keys("REDIS_OPS:*"))
+    if not keys:
+        console.print("[dim]redis memory is empty[/]")
+        return
+    table = Table(title="agent long-term memory (REDIS_OPS:*)")
+    table.add_column("key", style="cyan")
+    table.add_column("type", style="dim")
+    table.add_column("ttl", justify="right")
+    for key in keys:
+        ttl = r.ttl(key)
+        table.add_row(key, r.type(key), str(ttl) if ttl >= 0 else "forever")
+    console.print(table)
+
+
+def forget_memory() -> None:
+    """Wipes every key in the agent's long-term Redis memory."""
+    if not tool_box.redis_available():
+        console.print("[dim]redis memory: off[/]")
+        return
+    from modules.clients import r
+
+    keys = r.keys("REDIS_OPS:*")
+    if not keys:
+        console.print("[dim]redis memory is already empty[/]")
+        return
+    count = r.delete(*keys)
+    console.print("[yellow]wiped " + str(count) + " memory keys[/]")
+
+
+def export_session(agent, config: dict, session_id: str) -> None:
+    """Saves this conversation to datastore/chat_<session>.md as markdown.
+
+    Args:
+        agent: the compiled agent runnable.
+        config: thread config identifying the session.
+        session_id: the session id (used in the filename).
+    """
+    state = agent.get_state(config)
+    messages = state.values.get("messages", []) if state.values else []
+    if not messages:
+        console.print("[dim]nothing to export yet[/]")
+        return
+
+    lines = ["# chat session " + session_id, "_" + datetime.now().isoformat(timespec="seconds") + "_", ""]
+    for message in messages:
+        if message.type == "ai" and not message.content:
+            continue
+        role = "you" if message.type == "human" else ("bot" if message.type == "ai" else message.type)
+        lines.append("## " + role)
+        lines.append("")
+        lines.append(message.content)
+        lines.append("")
+
+    path = tool_box.get_datastore_dir() / ("chat_" + session_id + ".md")
+    path.write_text("\n".join(lines), encoding="utf-8")
+    console.print("[dim]exported to " + str(path) + "[/]")
+
+
+# =====================================================================
+# 6. CLI LOOP
 # =====================================================================
 
 HELP_TEXT = """
 commands:
-  /help     show this help
-  /tools    list available tools
-  /history  show this session's messages
-  /sources  list everything in the knowledge base (PDFs + ingested URLs)
-  /url <link>  fetch a web page and embed it into the knowledge base
-  /new      start a fresh session (clears the chat)
-  /q        quit (also /quit or /exit)
+  /help         show this help
+  /tools        list available tools
+  /history      show this session's messages
+  /status       session info + which services are live
+  /clear        forget this session's conversation + clear the web cache
+  /new          start a fresh session (new id, old one kept)
+  /memory       peek at the agent's long-term Redis memory (REDIS_OPS:*)
+  /forget       wipe the agent's long-term Redis memory
+  /export       save this conversation to datastore/chat_<session>.md
+  /sources      list the knowledge base (PDFs + ingested URLs)
+  /url <link>   fetch a web page and embed it into the knowledge base
+  /q            quit (also /quit or /exit)
 anything else is sent to the chatbot.
 """
 
@@ -461,8 +600,19 @@ def main() -> None:
             for t in tool_box_list():
                 table.add_row(t.name, t.description.strip().split("\n")[0])
             console.print(table)
+        elif text == "/status":
+            show_status(agent, config, session_id, logger)
+        elif text == "/clear":
+            clear_session(agent, config, session_id)
+            config = {"configurable": {"thread_id": session_id}}
         elif text == "/history":
             print_history(agent, config)
+        elif text == "/memory":
+            show_memory()
+        elif text == "/forget":
+            forget_memory()
+        elif text == "/export":
+            export_session(agent, config, session_id)
         elif text == "/sources":
             print_sources()
         elif text.startswith("/url "):

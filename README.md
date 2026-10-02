@@ -230,7 +230,7 @@ for update in app.stream(input, config, stream_mode="updates"):   ...
 | Chat log | `modules/mongo_utils.py` (`MongoUtil`) | Every message (human/ai/tool) written to MongoDB `langgraph_chatbot.messages`, message-by-message. Optional — chatbot runs fine without Mongo. |
 | Cache | `modules/redis_utils.py` (`RedisStringUtil`) | Web tool results cached in Redis (weather 10 min, currency 1 h, distances/wiki 1 day). Optional — runs fine without Redis. |
 
-**CLI commands:** `/help`, `/tools`, `/history`, `/sources` (list the knowledge base), `/url <link>` (embed a web page into the knowledge base), `/new`, and `/q` / `/quit` / `/exit` to quit. The interface is powered by **rich**: replies render as full markdown (headings, lists, code blocks), tool calls show a live spinner ("thinking… / using tools…"), `/tools` prints a table, and prompts/banners/errors are colorized.
+**CLI commands:** `/help`, `/tools`, `/status` (session + service states), `/history`, `/clear` (forget the conversation + wipe the web cache), `/new`, `/memory` (peek at the agent's Redis memory), `/forget` (wipe that memory), `/export` (save the chat to `datastore/chat_<session>.md`), `/sources`, `/url <link>`, and `/q` / `/quit` / `/exit`. The interface is powered by **rich**: replies render as full markdown (headings, lists, code blocks), tool calls show a live spinner ("thinking… / using tools…"), and commands print styled tables.
 
 **Env vars** (see `.env.sample`; copy to `.env`): `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_EMBEDDINGS_MODEL`, `MONGO_URI` (optional), `REDIS_URL` (optional), `MCP_ENABLED` (optional). Mongo, Redis, and MCP all degrade gracefully — a 2-second probe at startup, and if they're down the chatbot says so and continues.
 
