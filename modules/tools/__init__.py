@@ -7,6 +7,7 @@ Structure:
     datetime_tools.py - current time, timezone conversion, durations
     url_tools.py      - fetch any web page as clean text
     file_tools.py     - sandboxed file management inside datastore/
+    redis_tools.py    - sandboxed Redis memory (REDIS_OPS: namespace)
     mcp_tools.py      - MCP server connector (stdio + http; MCP_ENABLED gate)
 
 Usage (unchanged from the old single-file module):
@@ -23,6 +24,7 @@ from modules.tools.web_tools import get_weather, get_distance, get_currency_rate
 from modules.tools.datetime_tools import get_current_time, convert_time, time_between
 from modules.tools.url_tools import fetch_url
 from modules.tools.file_tools import DATASTORE_DIR, get_datastore_dir, load_file_management_tools
+from modules.tools.redis_tools import redis_command, redis_available
 from modules.tools.mcp_tools import MCP_TOOLS, load_mcp_tools, mcp_enabled
 
 __all__ = [
@@ -45,6 +47,9 @@ __all__ = [
     "DATASTORE_DIR",
     "get_datastore_dir",
     "load_file_management_tools",
+    # redis memory
+    "redis_command",
+    "redis_available",
     # mcp
     "MCP_TOOLS",
     "load_mcp_tools",

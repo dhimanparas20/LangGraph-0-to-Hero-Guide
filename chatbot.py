@@ -22,6 +22,11 @@ from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+# load .env BEFORE importing modules - modules/clients.py and others read
+# env vars (REDIS_URL, DATASTORE_DIR, ...) at import time
+load_dotenv()
+
 from pypdf import PdfReader
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -35,7 +40,14 @@ from langgraph.checkpoint.memory import InMemorySaver
 from modules import tools as tool_box
 from modules.mongo_utils import MongoUtil
 
-load_dotenv()
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.prompt import Prompt
+from rich.table import Table
+
+# the one console used for all output (rich auto-detects colors/TTY)
+console = Console()
 
 # ---------- paths (pathlib everywhere) ----------
 ROOT = Path(__file__).parent
@@ -53,6 +65,9 @@ MCP_EXTRA_TOOLS = []
 
 # sandboxed file tools for the datastore/ directory (always on)
 FILE_TOOLS = []
+
+# redis memory tool (offered when Redis answers a ping)
+REDIS_TOOLS = []
 
 
 # =====================================================================
@@ -226,6 +241,7 @@ def tool_box_list() -> list:
     ]
     result.extend(MCP_EXTRA_TOOLS)
     result.extend(FILE_TOOLS)
+    result.extend(REDIS_TOOLS)
     if VECTORSTORE is not None:
         result.append(search_pdfs)
     return result
@@ -254,6 +270,8 @@ def build_agent():
             "currency rates and Wikipedia lookups, fetch_url to read any link the user "
             "shares, the file tools to manage files in the datastore sandbox "
             "(file paths are RELATIVE to it: 'notes.txt' means datastore/notes.txt), "
+            "redis_command to use your own long-term memory in Redis (remember and "
+            "recall facts across sessions with SET/GET), "
             "and any web-search tools for questions needing fresh information "
             "from the internet. Be concise and friendly."
         ),
@@ -366,16 +384,20 @@ def chat_turn(agent, config: dict, text: str, logger: ChatLogger, session_id: st
         session_id: current session id for logging.
     """
     logger.log(session_id, "human", text)
-    print("  bot is thinking...")
 
-    # stream updates so the user sees which node is running (lesson 9)
-    for event in agent.stream({"messages": [HumanMessage(content=text)]}, config, stream_mode="updates"):
-        for node_name in event.keys():
-            print("   [" + node_name + "]")
+    # live spinner while the agent works; the label follows the graph's progress
+    with console.status("[dim]bot is thinking...[/]", spinner="dots") as status:
+        for event in agent.stream({"messages": [HumanMessage(content=text)]}, config, stream_mode="updates"):
+            for node_name in event.keys():
+                if "tool" in node_name:
+                    status.update("[dim]bot is using tools...[/]")
+                else:
+                    status.update("[dim]bot is thinking...[/]")
 
     final = agent.get_state(config).values["messages"][-1]
     logger.log(session_id, "ai", final.content)
-    print("  bot: " + final.content)
+    console.print(Markdown(final.content))
+    console.print()
 
 
 def main() -> None:
@@ -385,9 +407,11 @@ def main() -> None:
     then loops user input until an exit command is given.
     """
     global VECTORSTORE
-    print("=" * 60)
-    print("  LangGraph CLI Chatbot  (type /help for commands, /q to quit)")
-    print("=" * 60)
+    console.print(Panel.fit(
+        "[bold cyan]LangGraph CLI Chatbot[/]\n"
+        "[dim]markdown-rendered replies - type /help for commands, /q to quit[/]",
+        border_style="cyan",
+    ))
 
     VECTORSTORE = build_vectorstore()
     logger = ChatLogger()
@@ -396,6 +420,10 @@ def main() -> None:
     init_cache()
 
     FILE_TOOLS.extend(tool_box.load_file_management_tools())
+
+    if tool_box.redis_available():
+        REDIS_TOOLS.append(tool_box.redis_command)
+        print("[setup] redis memory: ON (agent can use redis_command in the REDIS_OPS sandbox)")
 
     if tool_box.mcp_enabled():
         print("[setup] mcp: MCP_ENABLED is on - connecting to MCP servers...")
@@ -408,12 +436,12 @@ def main() -> None:
 
     session_id = uuid.uuid4().hex[:8]
     config = {"configurable": {"thread_id": session_id}}
-    print("session: " + session_id)
-    print()
+    console.print("[dim]session: " + session_id + "[/]")
+    console.print()
 
     while True:
         try:
-            text = input("you > ").strip()
+            text = Prompt.ask("[bold green]you >[/]").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             break
@@ -427,8 +455,12 @@ def main() -> None:
         if text == "/help":
             print(HELP_TEXT)
         elif text == "/tools":
+            table = Table(title="agent tools", show_header=True)
+            table.add_column("tool", style="bold cyan", no_wrap=True)
+            table.add_column("what it does")
             for t in tool_box_list():
-                print("  - " + t.name + ": " + t.description.strip().split("\n")[0])
+                table.add_row(t.name, t.description.strip().split("\n")[0])
+            console.print(table)
         elif text == "/history":
             print_history(agent, config)
         elif text == "/sources":
@@ -438,14 +470,15 @@ def main() -> None:
         elif text == "/new":
             session_id = uuid.uuid4().hex[:8]
             config = {"configurable": {"thread_id": session_id}}
-            print("  new session: " + session_id)
+            console.print("[dim]new session: " + session_id + "[/]")
         else:
             try:
                 chat_turn(agent, config, text, logger, session_id)
             except Exception as error:
-                print("  error: " + str(error))
+                console.print("[red]error: " + str(error) + "[/]")
 
-    print("bye! session " + session_id + " logged " + ("to mongo" if logger.enabled else "nowhere (mongo off)"))
+    console.print("[dim]bye! session " + session_id + " logged "
+                  + ("to mongo" if logger.enabled else "nowhere (mongo off)") + "[/]")
 
 
 if __name__ == "__main__":

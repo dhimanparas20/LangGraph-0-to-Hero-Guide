@@ -1138,6 +1138,7 @@ dependencies = [
     { name = "pypdf" },
     { name = "python-dotenv" },
     { name = "redis" },
+    { name = "rich" },
 ]
 
 [package.metadata]
@@ -1159,6 +1160,7 @@ requires-dist = [
     { name = "pypdf", specifier = ">=6.19.0" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
     { name = "redis", specifier = ">=8.1.0" },
+    { name = "rich", specifier = ">=15.0.0" },
 ]
 
 [[package]]
