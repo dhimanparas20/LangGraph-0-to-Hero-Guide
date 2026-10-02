@@ -1,0 +1,23 @@
+[project]
+name = "langgraph-0-to-hero-course"
+version = "0.1.0"
+description = "LangGraph 0 to Hero Course: 12 lessons, 6 pro topics, 4 example projects, and a full CLI chatbot"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "bcrypt>=5.0.0",
+    "colorlog>=6.12.0",
+    "dateparser>=1.4.3",
+    "langchain>=1.4.3",
+    "langchain-chroma>=1.1.0",
+    "langchain-mcp-adapters>=0.3.2",
+    "langchain-openai>=1.6.7",
+    "langchain-text-splitters>=1.1.2",
+    "langgraph>=1.2.12",
+    "langgraph-checkpoint-sqlite>=3.1.1",
+    "pydantic>=2.13.5",
+    "pymongo>=4.18.2",
+    "pypdf>=6.19.0",
+    "python-dotenv>=1.2.4",
+    "redis>=8.1.0",
+]

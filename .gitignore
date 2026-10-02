@@ -1,0 +1,20 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.idea
+.env
+
+# Databases (lesson 11 sqlite checkpoint file)
+*.db
+
+# Chatbot data: embedded PDF index + source PDFs
+chroma_db/
+pdfs/
+chat_memory.db
