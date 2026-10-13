@@ -24,13 +24,15 @@ from typing import Annotated
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_chroma import Chroma
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 
 load_dotenv()
+
+from modules.llm import get_chat_model, get_embeddings
 
 MAX_REWRITES = 2
 
@@ -44,9 +46,8 @@ LESSON_DOCS = [
     "Repo conventions: state schemas use Pydantic BaseModel, code runs in WSL Ubuntu with uv, model names come from the .env file (OPENAI_MODEL and OPENAI_EMBEDDINGS_MODEL), and lessons are numbered python files at the repo root.",
 ]
 
-embeddings = OpenAIEmbeddings(model=os.getenv("OPENAI_EMBEDDINGS_MODEL", "text-embedding-3-small"))
+embeddings = get_embeddings()
 vectorstore = Chroma.from_texts(texts=LESSON_DOCS, embedding=embeddings)
-
 
 # ---------- state ----------
 class State(BaseModel):
@@ -68,9 +69,7 @@ class State(BaseModel):
     relevant: bool = False  # grader verdict
     rewrites: int = 0       # loop guard
 
-
-llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
-
+llm = get_chat_model()
 
 # ---------- structured-output decision makers ----------
 class Route(BaseModel):
@@ -82,7 +81,6 @@ class Route(BaseModel):
 
     go_to: str   # "retrieve" or "direct"
 
-
 class Grade(BaseModel):
     """Structured grader decision.
 
@@ -92,10 +90,8 @@ class Grade(BaseModel):
 
     relevant: bool
 
-
 router_llm = llm.with_structured_output(Route)
 grader_llm = llm.with_structured_output(Grade)
-
 
 # ---------- nodes ----------
 def route_question(state: State):
@@ -118,7 +114,6 @@ def route_question(state: State):
     print("route_question -> " + route)
     return {"question": question, "route": route}
 
-
 def retrieve(state: State):
     """Searches the vector store with the current (possibly rewritten) question.
 
@@ -132,7 +127,6 @@ def retrieve(state: State):
     texts = [doc.page_content for doc in docs]
     print("retrieve: " + str(len(texts)) + " docs for: " + state.question[:50])
     return {"context": texts}
-
 
 def grade_docs(state: State):
     """LLM grader: are the retrieved docs useful for the question?
@@ -151,7 +145,6 @@ def grade_docs(state: State):
     print("grade_docs -> relevant: " + str(grade.relevant))
     return {"relevant": grade.relevant}
 
-
 def rewrite_query(state: State):
     """Rewrites the question for better semantic search, bumping the guard.
 
@@ -167,7 +160,6 @@ def rewrite_query(state: State):
     )
     print("rewrite_query -> " + reply.content)
     return {"question": reply.content, "rewrites": state.rewrites + 1}
-
 
 def generate(state: State):
     """Answers from the retrieved context (or admits it doesn't know).
@@ -188,7 +180,6 @@ def generate(state: State):
     print("generate: answered")
     return {"messages": [reply]}
 
-
 def direct_answer(state: State):
     """Answers without retrieval (greetings, general chat).
 
@@ -201,7 +192,6 @@ def direct_answer(state: State):
     reply = llm.invoke(state.messages)
     print("direct_answer: answered without retrieval")
     return {"messages": [reply]}
-
 
 # ---------- routers (lesson 3) ----------
 def after_route(state: State):
@@ -217,7 +207,6 @@ def after_route(state: State):
         return "direct_answer"
     return "retrieve"
 
-
 def after_grade(state: State):
     """Router after grade_docs: generate, rewrite, or give up gracefully.
 
@@ -232,7 +221,6 @@ def after_grade(state: State):
     if state.rewrites < MAX_REWRITES:
         return "rewrite_query"   # loop back with a better question
     return "generate"            # give up gracefully; generate will say it doesn't know
-
 
 # ---------- graph ----------
 graph = StateGraph(State)
@@ -253,7 +241,6 @@ graph.add_edge("direct_answer", END)
 
 app = graph.compile()
 
-
 # ---------- demo: three questions, three different paths ----------
 def ask(question):
     print()
@@ -261,7 +248,6 @@ def ask(question):
     print("Q: " + question)
     result = app.invoke({"messages": [HumanMessage(content=question)]})
     print("A: " + result["messages"][-1].content)
-
 
 ask("Hey! Not a question about lessons - just say hi back.")          # -> direct
 ask("How does the agent loop know when to stop calling tools?")       # -> retrieve -> relevant -> generate

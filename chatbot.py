@@ -28,7 +28,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from pypdf import PdfReader
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
@@ -38,6 +37,7 @@ from langchain.agents import create_agent
 from langgraph.checkpoint.memory import InMemorySaver
 
 from modules import tools as tool_box
+from modules.llm import get_chat_model, get_embeddings, llm_provider, resolve_chat_model_name
 from modules.mongo_utils import MongoUtil
 
 from rich.console import Console
@@ -85,7 +85,7 @@ def build_vectorstore():
         A Chroma vector store, or None when no PDF text could be ingested
         (PDF search is then disabled for the session).
     """
-    embeddings = OpenAIEmbeddings(model=os.getenv("OPENAI_EMBEDDINGS_MODEL", "text-embedding-3-small"))
+    embeddings = get_embeddings()
 
     # not the first run -> the persisted index is already there
     if CHROMA_DIR.exists():
@@ -253,7 +253,7 @@ def build_agent():
     Returns:
         A compiled create_agent runnable (model node + ToolNode + router).
     """
-    llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+    llm = get_chat_model()
 
     all_tools = tool_box_list()
     if not all_tools:
@@ -302,7 +302,7 @@ def ingest_url(url: str) -> None:
 
     # create the store on demand if the first run had no PDFs at all
     if VECTORSTORE is None:
-        embeddings = OpenAIEmbeddings(model=os.getenv("OPENAI_EMBEDDINGS_MODEL", "text-embedding-3-small"))
+        embeddings = get_embeddings()
         VECTORSTORE = Chroma(persist_directory=str(CHROMA_DIR), embedding_function=embeddings)
         print("  (note: created a fresh vector store - restart to get the search_pdfs tool)")
 
@@ -391,7 +391,8 @@ def show_status(agent, config: dict, session_id: str, logger: ChatLogger) -> Non
     table.add_column(style="bold cyan")
     table.add_column()
     table.add_row("session", session_id + "  (" + str(message_count) + " messages)")
-    table.add_row("model", os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+    table.add_row("provider", llm_provider())
+    table.add_row("model", resolve_chat_model_name())
     table.add_row("tools", str(len(tool_box_list())))
     table.add_row("mongo logging", "ON" if logger.enabled else "off")
     table.add_row("redis memory", "ON" if REDIS_TOOLS else "off")

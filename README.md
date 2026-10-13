@@ -232,7 +232,7 @@ for update in app.stream(input, config, stream_mode="updates"):   ...
 
 **CLI commands:** `/help`, `/tools`, `/status` (session + service states), `/history`, `/clear` (forget the conversation + wipe the web cache), `/new`, `/memory` (peek at the agent's Redis memory), `/forget` (wipe that memory), `/export` (save the chat to `datastore/chat_<session>.md`), `/sources`, `/url <link>`, and `/q` / `/quit` / `/exit`. The interface is powered by **rich**: replies render as full markdown (headings, lists, code blocks), tool calls show a live spinner ("thinking… / using tools…"), and commands print styled tables.
 
-**Env vars** (see `.env.sample`; copy to `.env`): `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_EMBEDDINGS_MODEL`, `MONGO_URI` (optional), `REDIS_URL` (optional), `MCP_ENABLED` (optional). Mongo, Redis, and MCP all degrade gracefully — a 2-second probe at startup, and if they're down the chatbot says so and continues.
+**Env vars** (see `.env.sample`; copy to `.env`): `OPENAI_API_KEY` and/or `AI_GATEWAY_API_KEY`, `OPENAI_MODEL`, `OPENAI_EMBEDDINGS_MODEL`, optional `LLM_PROVIDER` (`openai` | `vercel`; auto-selects vercel when the gateway key is set), `MONGO_URI`, `REDIS_URL`, `MCP_ENABLED`. Models go through `modules/llm.py` (`get_chat_model` / `get_embeddings`) — OpenAI direct or [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) via the OpenAI-compatible base URL. Mongo, Redis, and MCP all degrade gracefully — a 2-second probe at startup, and if they're down the chatbot says so and continues.
 
 Note on the agent API: `create_react_agent` (langgraph.prebuilt) is deprecated — it moves to `langchain.agents.create_agent` (with `system_prompt=` instead of `prompt=`) and disappears in LangGraph 2.0. `chatbot.py`, `pro_topics/` and `examples/` already use the modern `create_agent`; lessons 4 and 12 deliberately keep `create_react_agent` because that's what most tutorials still show (see `pro_topics/06` for the migration).
 
@@ -240,7 +240,7 @@ Note on the agent API: `create_react_agent` (langgraph.prebuilt) is deprecated �
 
 - Repo layout: `lessons/` (0-to-hero course), `pro_topics/` (production patterns), `examples/` (domain projects), `modules/` (chatbot utilities), `pdfs/` (your documents), `chroma_db/` (embedded index), `chatbot.py` (main app)
 - Run everything in **WSL Ubuntu**: lessons `uv run lessons/<file>`, pro `uv run pro_topics/<file>`, examples `uv run examples/<file>`, chatbot `uv run chatbot.py`
-- `.env` (gitignored, template in `.env.sample`): `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_EMBEDDINGS_MODEL`, `MONGO_URI`, `REDIS_URL` — always read via `os.getenv`, never hardcode
+- `.env` (gitignored, template in `.env.sample`): `OPENAI_API_KEY` / `AI_GATEWAY_API_KEY`, `OPENAI_MODEL`, `OPENAI_EMBEDDINGS_MODEL`, `MONGO_URI`, `REDIS_URL` — always read via `os.getenv`, never hardcode. Prefer `from modules.llm import get_chat_model, get_embeddings` over constructing `ChatOpenAI` directly.
 - Vector store: local Chroma (in-memory in lessons; `persist_directory=` to keep on disk)
 - `chat_memory.db` (lesson 11), `chroma_db/`, and `pdfs/` are gitignored
 - State schemas use **Pydantic** in this repo; keep node prints labeled (`node_name:`) so traces read like logs

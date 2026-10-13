@@ -22,12 +22,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from langchain_openai import ChatOpenAI
 
 load_dotenv()
 
-ROOT = Path(__file__).parent.parent
+from modules.llm import get_chat_model
 
+ROOT = Path(__file__).parent.parent
 
 class Expense(BaseModel):
     """One extracted expense record.
@@ -41,7 +41,6 @@ class Expense(BaseModel):
     item: str
     amount: float
     category: str
-
 
 class ExpenseStore:
     """Storage for expenses with MongoDB persistence and an in-memory fallback.
@@ -107,10 +106,9 @@ class ExpenseStore:
             totals[category] = totals.get(category, 0) + float(record.get("amount", 0))
         return totals
 
-
 def main() -> None:
     """Runs the demo: extract 3 expenses, then report totals by category."""
-    llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+    llm = get_chat_model()
     extractor = llm.with_structured_output(Expense)
     store = ExpenseStore()
 
@@ -135,7 +133,6 @@ def main() -> None:
 
     print()
     print("records stored:", len(store.all_expenses()))
-
 
 if __name__ == "__main__":
     main()

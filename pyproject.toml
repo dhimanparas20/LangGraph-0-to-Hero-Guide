@@ -24,3 +24,12 @@ dependencies = [
     "redis>=8.1.0",
     "rich>=15.0.0",
 ]
+
+# Install `modules` so lessons/examples can `from modules.llm import ...`
+# when run as `uv run lessons/02_llm_node.py`.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["modules"]

@@ -12,14 +12,15 @@ from typing import Annotated
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from langchain_openai import ChatOpenAI
+
 from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 
-# Loads OPENAI_API_KEY from the .env file into environment variables.
+# Loads API keys / model settings from .env into environment variables.
 load_dotenv()
 
+from modules.llm import get_chat_model
 
 # 1. STATE: a chat conversation is just a list of messages.
 # Annotated[list, add_messages] tells LangGraph the merge rule for this key:
@@ -36,13 +37,11 @@ class State(BaseModel):
 
     messages: Annotated[list, add_messages] = []
 
-
 # The LLM is created OUTSIDE the graph, nodes just use it.
 # (LangGraph itself never calls any model - the node does. LangGraph only
 # moves state between nodes.)
-# Model name comes from .env (OPENAI_MODEL), with gpt-4o-mini as fallback.
-llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
-
+# get_chat_model() reads OPENAI_MODEL and routes via OpenAI or Vercel AI Gateway.
+llm = get_chat_model()
 
 # 2. NODE 1: writes the user's question into the conversation.
 def write_question(state: State):
@@ -57,7 +56,6 @@ def write_question(state: State):
     question = HumanMessage(content="Tell me one fun fact about space, in one sentence.")
     return {"messages": [question]}
 
-
 # 3. NODE 2: calls the LLM with the WHOLE conversation so far,
 # then appends its reply to the same list.
 def answer(state: State):
@@ -71,7 +69,6 @@ def answer(state: State):
     """
     reply = llm.invoke(state.messages)
     return {"messages": [reply]}
-
 
 graph = StateGraph(State)
 graph.add_node("write_question", write_question)

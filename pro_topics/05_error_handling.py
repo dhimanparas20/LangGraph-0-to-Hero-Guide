@@ -24,7 +24,7 @@ Uses the modern create_agent API (see pro lesson 06).
 import os
 
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 from langchain.agents import create_agent
@@ -32,10 +32,11 @@ from langgraph.errors import GraphRecursionError
 
 load_dotenv()
 
+from modules.llm import get_chat_model
+
 # module-level counter: the tool FAILS the first 2 times, then works.
 # (A state-free trick so the demo is deterministic.)
 CALL_COUNT = {"n": 0}
-
 
 @tool
 def fetch_price(product: str) -> str:
@@ -53,28 +54,25 @@ def fetch_price(product: str) -> str:
         return "ERROR: shop API timeout (attempt " + str(CALL_COUNT["n"]) + "), try again"
     return product + " costs 499 rupees"
 
-
 def build_agent():
     """Builds the agent: model + tools over the flaky price tool.
 
     Returns:
         A compiled agent runnable.
     """
-    llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+    llm = get_chat_model()
     return create_agent(
         llm,
         tools=[fetch_price],
         system_prompt="Use fetch_price for any price question. If a tool returns an ERROR message, retry it.",
     )
 
-
 def demo_retry_wrapper() -> None:
     """Shows the .with_retry pattern for direct LLM calls (failure type 2)."""
-    llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+    llm = get_chat_model()
     retried_llm = llm.with_retry(stop_after_attempt=3)
     reply = retried_llm.invoke([HumanMessage(content="Say exactly: ok")])
     print("retry-wrapped direct call succeeded:", reply.content)
-
 
 def demo_flaky_tool(agent) -> None:
     """Runs the agent whose tool fails twice; error-as-text lets the model retry.
@@ -90,7 +88,6 @@ def demo_flaky_tool(agent) -> None:
     )
     print("final:", result["messages"][-1].content)
     print("(tool was called", CALL_COUNT["n"], "times: 2 errors + 1 success)")
-
 
 def demo_recursion_limit(agent) -> None:
     """Shows GraphRecursionError being caught when the step limit is too low.
@@ -108,7 +105,6 @@ def demo_recursion_limit(agent) -> None:
     except GraphRecursionError:
         print("caught GraphRecursionError: the graph hit the step limit and stopped safely")
 
-
 def main() -> None:
     """Runs all three error-handling demos in order."""
     demo_retry_wrapper()
@@ -116,7 +112,6 @@ def main() -> None:
     agent = build_agent()
     demo_flaky_tool(agent)
     demo_recursion_limit(agent)
-
 
 if __name__ == "__main__":
     main()

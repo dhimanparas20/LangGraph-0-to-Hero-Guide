@@ -16,13 +16,14 @@ from typing import Annotated
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from langchain_openai import ChatOpenAI
+
 from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 
 load_dotenv()
 
+from modules.llm import get_chat_model
 
 class State(BaseModel):
     """State for a tiny two-step async pipeline.
@@ -35,9 +36,7 @@ class State(BaseModel):
     messages: Annotated[list, add_messages] = []
     shouty: str = ""
 
-
-llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
-
+llm = get_chat_model()
 
 async def ask_llm(state: State) -> dict:
     """Async node: awaits the model without blocking the event loop.
@@ -53,7 +52,6 @@ async def ask_llm(state: State) -> dict:
     print("ask_llm: got reply")
     return {"messages": [reply]}
 
-
 async def make_shouty(state: State) -> dict:
     """Async node: uppercases the latest reply (trivially async to show the pattern).
 
@@ -65,7 +63,6 @@ async def make_shouty(state: State) -> dict:
     """
     await asyncio.sleep(0.1)  # stand-in for any awaited I/O
     return {"shouty": state.messages[-1].content.upper()}
-
 
 def build_graph():
     """Builds and compiles the async graph (same API as sync graphs).
@@ -80,7 +77,6 @@ def build_graph():
     graph.add_edge("ask_llm", "make_shouty")
     graph.add_edge("make_shouty", END)
     return graph.compile()
-
 
 async def run_demo() -> None:
     """Runs the graph twice: once with ainvoke, once token-streaming with astream.
@@ -105,7 +101,6 @@ async def run_demo() -> None:
     ):
         for node_name in event:
             print("  node finished:", node_name)
-
 
 if __name__ == "__main__":
     asyncio.run(run_demo())

@@ -20,7 +20,7 @@ from typing import Annotated
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from langchain_openai import ChatOpenAI
+
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, START, END
@@ -29,6 +29,7 @@ from langgraph.prebuilt import ToolNode
 
 load_dotenv()
 
+from modules.llm import get_chat_model
 
 # ---------- 1. TOOLS ----------
 # The @tool decorator (the one decorator LangChain requires) turns a plain
@@ -48,7 +49,6 @@ def get_word_length(word: str) -> int:
     """
     return len(word)
 
-
 @tool
 def add_numbers(a: int, b: int) -> int:
     """Adds two numbers and returns the sum.
@@ -62,9 +62,7 @@ def add_numbers(a: int, b: int) -> int:
     """
     return a + b
 
-
 TOOLS = [get_word_length, add_numbers]
-
 
 # ---------- 2. STATE ----------
 class State(BaseModel):
@@ -77,11 +75,9 @@ class State(BaseModel):
 
     messages: Annotated[list, add_messages] = []
 
-
 # ---------- 3. THE LLM, NOW AWARE OF TOOLS ----------
-llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+llm = get_chat_model()
 llm_with_tools = llm.bind_tools(TOOLS)
-
 
 # ---------- 4. NODE: call the model ----------
 def call_model(state: State):
@@ -100,7 +96,6 @@ def call_model(state: State):
     else:
         print("call_model: model gives the final answer")
     return {"messages": [reply]}
-
 
 # ---------- 5. NODE: run the requested tools ----------
 # The model's reply carries tool_calls: a list of {name, args, id} dicts.
@@ -132,7 +127,6 @@ def call_tools(state: State):
         results.append(ToolMessage(content=str(value), tool_call_id=tool_call["id"]))
     return {"messages": results}
 
-
 # ---------- 6. THE ROUTER: relay the model's decision ----------
 # Lesson 3's router ran OUR if-statement on state. This one just checks:
 # did the model ask for tools? The model itself made the decision.
@@ -149,7 +143,6 @@ def route_after_model(state: State):
     if last_reply.tool_calls:
         return "call_tools"
     return END
-
 
 # ---------- 7. THE GRAPH ----------
 graph = StateGraph(State)
@@ -178,7 +171,6 @@ print()
 print("=== final answer ===")
 print(result["messages"][-1].content)
 
-
 # =====================================================================
 # PART 2: the SAME agent, but with ToolNode - the prebuilt node.
 #
@@ -206,7 +198,6 @@ def print_history(messages):
             print("tool result: " + message.content)
         else:
             print(message.type + ": " + message.content)
-
 
 graph2 = StateGraph(State)
 graph2.add_node("call_model", call_model)

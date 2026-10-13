@@ -22,13 +22,14 @@ from typing import Annotated
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from langchain_openai import ChatOpenAI
+
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 
 load_dotenv()
 
+from modules.llm import get_chat_model
 
 # ---------- shared state ----------
 # Both the main graph and the subgraphs use this same State class.
@@ -45,9 +46,7 @@ class State(BaseModel):
     messages: Annotated[list, add_messages] = []
     goto: str = ""   # which specialist the supervisor picked
 
-
-llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
-
+llm = get_chat_model()
 
 # ---------- build a specialist: each is a whole mini-graph ----------
 # make_specialist returns a COMPILED GRAPH. Inside it is just one chat
@@ -81,7 +80,6 @@ def make_specialist(system_prompt):
     mini.add_edge("chat", END)
     return mini.compile()
 
-
 # ---------- the supervisor ----------
 class Choice(BaseModel):
     """Structured supervisor decision.
@@ -92,9 +90,7 @@ class Choice(BaseModel):
 
     specialist: str   # "science" or "history"
 
-
 router_llm = llm.with_structured_output(Choice)
-
 
 def supervisor(state: State):
     """Routes the newest question to the right specialist.
@@ -115,7 +111,6 @@ def supervisor(state: State):
     print("supervisor -> " + goto)
     return {"goto": goto}
 
-
 def route_after_supervisor(state: State):
     """Router returning the specialist the supervisor chose.
 
@@ -126,7 +121,6 @@ def route_after_supervisor(state: State):
         The next node name ("science_bot" or "history_bot").
     """
     return state.goto
-
 
 # ---------- the main graph ----------
 main_graph = StateGraph(State)
@@ -141,14 +135,12 @@ main_graph.add_edge("history_bot", END)
 
 app = main_graph.compile()
 
-
 # ---------- demo ----------
 def ask(question):
     print()
     print("Q: " + question)
     result = app.invoke({"messages": [HumanMessage(content=question)]})
     print("A: " + result["messages"][-1].content)
-
 
 ask("Why is the sky blue?")            # -> science_bot
 ask("Who was Genghis Khan?")           # -> history_bot

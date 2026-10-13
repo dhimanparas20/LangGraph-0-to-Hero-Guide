@@ -20,7 +20,7 @@ prompt= to system_prompt=, and pass the checkpointer the same way.
 import os
 
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 from langchain.agents import create_agent
@@ -28,6 +28,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 load_dotenv()
 
+from modules.llm import get_chat_model
 
 @tool
 def word_count(text: str) -> int:
@@ -41,14 +42,13 @@ def word_count(text: str) -> int:
     """
     return len(text.split())
 
-
 def build_agent():
     """Builds an agent with the modern create_agent API.
 
     Returns:
         A compiled agent runnable (supports invoke/stream/checkpointer).
     """
-    llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+    llm = get_chat_model()
 
     return create_agent(
         llm,
@@ -56,7 +56,6 @@ def build_agent():
         system_prompt="Use the word_count tool for any word-counting question. Be brief.",
         checkpointer=InMemorySaver(),
     )
-
 
 def main() -> None:
     """Runs the modern agent: one tool-using turn plus a memory turn.
@@ -81,7 +80,6 @@ def main() -> None:
         config,
     )
     print("answer:", result["messages"][-1].content)
-
 
 if __name__ == "__main__":
     main()

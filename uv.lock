@@ -1119,7 +1119,7 @@ wheels = [
 [[package]]
 name = "langgraph-0-to-hero-course"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "bcrypt" },
     { name = "beautifulsoup4" },

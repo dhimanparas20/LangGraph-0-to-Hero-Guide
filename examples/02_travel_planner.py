@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+
 from langchain_core.messages import HumanMessage
 from langchain.agents import create_agent
 from langgraph.checkpoint.memory import InMemorySaver
@@ -32,6 +32,7 @@ from modules.tools import get_weather, get_distance, search_wikipedia
 
 load_dotenv()
 
+from modules.llm import get_chat_model
 
 def init_cache() -> None:
     """Enables the Redis cache for web tools when REDIS_URL is live.
@@ -50,14 +51,13 @@ def init_cache() -> None:
     except Exception as error:
         print("[redis] not reachable - caching off (" + str(error).split("\n")[0][:60] + ")")
 
-
 def build_agent():
     """Builds the travel planner agent over the shared web tools.
 
     Returns:
         A compiled agent runnable with session memory.
     """
-    llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+    llm = get_chat_model()
     return create_agent(
         llm,
         tools=[get_weather, get_distance, search_wikipedia],
@@ -68,7 +68,6 @@ def build_agent():
         ),
         checkpointer=InMemorySaver(),
     )
-
 
 def main() -> None:
     """Runs a planning request that needs all three tools, then a follow-up."""
@@ -96,7 +95,6 @@ def main() -> None:
         config,
     )
     print("A:", result["messages"][-1].content)
-
 
 if __name__ == "__main__":
     main()

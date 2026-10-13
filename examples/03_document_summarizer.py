@@ -25,7 +25,7 @@ import operator
 from dotenv import load_dotenv
 from pypdf import PdfReader
 from pydantic import BaseModel
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
@@ -35,12 +35,13 @@ from langgraph.graph.message import add_messages
 
 load_dotenv()
 
+from modules.llm import get_chat_model, get_embeddings
+
 ROOT = Path(__file__).parent.parent
 PDFS_DIR = ROOT / "pdfs"
 MAX_CHUNKS = 3  # keep the demo cheap - raise for real use
 
-llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
-
+llm = get_chat_model()
 
 class State(BaseModel):
     """Summarizer state.
@@ -55,7 +56,6 @@ class State(BaseModel):
     chunks: list = []
     chunk_summaries: Annotated[list, operator.add] = []
     final_summary: str = ""
-
 
 def load_chunks() -> list:
     """Extracts and splits text from the first PDF in ./pdfs.
@@ -74,7 +74,6 @@ def load_chunks() -> list:
     chunks = splitter.split_text(text)[:MAX_CHUNKS]
     print("loaded", pdf_files[0].name, "->", len(chunks), "chunks")
     return chunks
-
 
 def map_summarize(state: State) -> dict:
     """Map stage: summarizes every chunk into one bullet (plain loop).
@@ -95,7 +94,6 @@ def map_summarize(state: State) -> dict:
         print("  map: summarized chunk", i + 1, "of", len(state.chunks))
     return {"chunk_summaries": summaries}
 
-
 def reduce_combine(state: State) -> dict:
     """Reduce stage: fuses chunk bullets into one flowing summary.
 
@@ -111,7 +109,6 @@ def reduce_combine(state: State) -> dict:
     ])
     return {"final_summary": reply.content.strip()}
 
-
 def build_graph():
     """Builds the map-reduce summarizer graph.
 
@@ -125,7 +122,6 @@ def build_graph():
     graph.add_edge("map_summarize", "reduce_combine")
     graph.add_edge("reduce_combine", END)
     return graph.compile()
-
 
 def connect_mongo():
     """Connects to MongoDB for summary storage if available.
@@ -144,7 +140,6 @@ def connect_mongo():
     except Exception:
         return None
 
-
 def main() -> None:
     """Runs the summarize -> embed -> store pipeline for one PDF."""
     chunks = load_chunks()
@@ -160,7 +155,7 @@ def main() -> None:
     print(summary)
 
     # make the summary searchable too (embeddings at work)
-    embeddings = OpenAIEmbeddings(model=os.getenv("OPENAI_EMBEDDINGS_MODEL", "text-embedding-3-small"))
+    embeddings = get_embeddings()
     store = Chroma.from_documents(
         [Document(page_content=summary, metadata={"kind": "summary"})],
         embeddings,
@@ -175,7 +170,6 @@ def main() -> None:
         print("summary stored in mongo (id", str(doc_id)[-6:] + ")")
     else:
         print("(mongo offline - summary not persisted)")
-
 
 if __name__ == "__main__":
     main()

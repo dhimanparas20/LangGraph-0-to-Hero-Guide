@@ -22,13 +22,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_chroma import Chroma
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 
 load_dotenv()
+
+from modules.llm import get_chat_model, get_embeddings
 
 FAQ_DOCS = [
     "ZetaPhone X1 price: the ZetaPhone X1 costs 499 dollars and the X1 Pro costs 699 dollars.",
@@ -38,7 +40,6 @@ FAQ_DOCS = [
     "ZetaPhone support: you can reach ZetaPhone support at support@zetaphone.example anytime.",
 ]
 
-
 class Route(BaseModel):
     """Structured router decision.
 
@@ -47,7 +48,6 @@ class Route(BaseModel):
     """
 
     go_to: str
-
 
 class State(BaseModel):
     """Support bot state.
@@ -61,7 +61,6 @@ class State(BaseModel):
     messages: Annotated[list, add_messages] = []
     route: str = ""
     context: list = []
-
 
 def connect_mongo():
     """Connects to MongoDB for ticket storage if available.
@@ -82,13 +81,11 @@ def connect_mongo():
         print("[mongo] off (" + str(error).split("\n")[0][:60] + "...)")
         return None
 
-
-embeddings = OpenAIEmbeddings(model=os.getenv("OPENAI_EMBEDDINGS_MODEL", "text-embedding-3-small"))
+embeddings = get_embeddings()
 vectorstore = Chroma.from_texts(texts=FAQ_DOCS, embedding=embeddings)
-llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+llm = get_chat_model()
 router_llm = llm.with_structured_output(Route)
 tickets = connect_mongo()
-
 
 def route_question(state: State) -> dict:
     """Decides whether the question needs the FAQ docs or a direct reply.
@@ -109,7 +106,6 @@ def route_question(state: State) -> dict:
     print("  route ->", route)
     return {"route": route}
 
-
 def retrieve(state: State) -> dict:
     """Searches the FAQ knowledge base for the newest question.
 
@@ -123,7 +119,6 @@ def retrieve(state: State) -> dict:
     docs = vectorstore.similarity_search(question, k=2)
     print("  retrieved", len(docs), "FAQ docs")
     return {"context": [doc.page_content for doc in docs]}
-
 
 def generate(state: State) -> dict:
     """Answers from the retrieved FAQ context (or admits gaps).
@@ -141,7 +136,6 @@ def generate(state: State) -> dict:
     )
     reply = llm.invoke([SystemMessage(content=system_prompt)] + state.messages)
     return {"messages": [reply]}
-
 
 def maybe_open_ticket(state: State) -> dict:
     """Opens a support ticket when the bot could not answer.
@@ -166,7 +160,6 @@ def maybe_open_ticket(state: State) -> dict:
         return {"messages": [SystemMessage(content=note)]}
     return {}
 
-
 def direct_answer(state: State) -> dict:
     """Answers chit-chat directly without retrieval.
 
@@ -179,7 +172,6 @@ def direct_answer(state: State) -> dict:
     reply = llm.invoke(state.messages)
     return {"messages": [reply]}
 
-
 def after_route(state: State) -> str:
     """Router function after route_question.
 
@@ -190,7 +182,6 @@ def after_route(state: State) -> str:
         Name of the next node.
     """
     return "direct_answer" if state.route == "direct" else "retrieve"
-
 
 def build_graph():
     """Builds and compiles the support bot graph.
@@ -213,7 +204,6 @@ def build_graph():
     graph.add_edge("direct_answer", END)
     return graph.compile()
 
-
 def ask(app, question: str) -> None:
     """Asks the support bot one question and prints its answer.
 
@@ -224,7 +214,6 @@ def ask(app, question: str) -> None:
     print("\nQ:", question)
     result = app.invoke({"messages": [HumanMessage(content=question)]})
     print("A:", result["messages"][-1].content)
-
 
 if __name__ == "__main__":
     app = build_graph()

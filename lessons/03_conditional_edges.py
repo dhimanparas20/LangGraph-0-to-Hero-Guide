@@ -16,16 +16,17 @@ from typing import Annotated
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from langchain_openai import ChatOpenAI
+
 from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 
 load_dotenv()
 
+from modules.llm import get_chat_model
+
 WORD_LIMIT = 15
 MAX_ATTEMPTS = 3
-
 
 # STATE: same state, two different merge rules.
 # messages uses the add_messages reducer (append), word_count and attempts
@@ -44,9 +45,7 @@ class State(BaseModel):
     word_count: int = 0
     attempts: int = 0
 
-
-llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
-
+llm = get_chat_model()
 
 # Node 1: ask for an explanation. Deliberately open-ended, so the first
 # answer will almost surely be longer than 15 words (we want to see the loop).
@@ -63,7 +62,6 @@ def ask_question(state: State):
         content="Explain what a black hole is. Cover how it forms and what the event horizon is."
     )
     return {"messages": [question]}
-
 
 # Node 2: call the LLM with the whole conversation so far.
 # On every retry, the conversation already contains the "too long" feedback,
@@ -83,7 +81,6 @@ def generate_answer(state: State):
     reply = llm.invoke(state.messages)
     print("generate_answer: " + reply.content)
     return {"messages": [reply]}
-
 
 # Node 3: plain Python check, no LLM here.
 def check_answer(state: State):
@@ -111,7 +108,6 @@ def check_answer(state: State):
     print("check_answer: " + str(count) + " words - ok or out of attempts, finishing")
     return {"word_count": count, "attempts": attempts}
 
-
 # THE ROUTER: reads the state, returns the NAME of the next node (or END).
 # This is a plain function - no LLM, just an if statement on the state.
 def route_after_check(state: State):
@@ -126,7 +122,6 @@ def route_after_check(state: State):
     if state.word_count > WORD_LIMIT and state.attempts < MAX_ATTEMPTS:
         return "generate_answer"   # loop BACK to generate
     return END                     # special value: the graph is done
-
 
 graph = StateGraph(State)
 graph.add_node("ask_question", ask_question)

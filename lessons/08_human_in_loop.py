@@ -21,7 +21,7 @@ from typing import Annotated
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from langchain_openai import ChatOpenAI
+
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, START, END
@@ -31,6 +31,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 load_dotenv()
 
+from modules.llm import get_chat_model
 
 @tool
 def send_email(to: str, subject: str, body: str) -> str:
@@ -48,9 +49,7 @@ def send_email(to: str, subject: str, body: str) -> str:
     print("   >>> EMAIL ACTUALLY SENT to " + to + " with subject: " + subject)
     return "Email sent to " + to + "."
 
-
 TOOLS = [send_email]
-
 
 class State(BaseModel):
     """Agent state for the approval demo.
@@ -61,10 +60,8 @@ class State(BaseModel):
 
     messages: Annotated[list, add_messages] = []
 
-
-llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+llm = get_chat_model()
 llm_with_tools = llm.bind_tools(TOOLS)
-
 
 def call_model(state: State):
     """Calls the tool-aware LLM and reports its tool requests.
@@ -82,7 +79,6 @@ def call_model(state: State):
         print("call_model: final answer")
     return {"messages": [reply]}
 
-
 def route_after_model(state: State):
     """Router relaying the model's decision (tools vs done).
 
@@ -96,7 +92,6 @@ def route_after_model(state: State):
         return "call_tools"
     return END
 
-
 graph = StateGraph(State)
 graph.add_node("call_model", call_model)
 graph.add_node("call_tools", ToolNode(TOOLS))
@@ -107,7 +102,6 @@ graph.add_edge("call_tools", "call_model")
 
 # THE NEW PART: pause before the tool node runs, every time it is about to.
 app = graph.compile(checkpointer=InMemorySaver(), interrupt_before=["call_tools"])
-
 
 # ================= PART 1: the human APPROVES =================
 print("=== PART 1: approve the email ===")
@@ -136,7 +130,6 @@ print("   args :", pending_call["args"])
 print("human decision: APPROVED")
 result = app.invoke(None, config1)   # runs call_tools, then call_model, then END
 print("final: " + result["messages"][-1].content)
-
 
 # ================= PART 2: the human REJECTS =================
 print()

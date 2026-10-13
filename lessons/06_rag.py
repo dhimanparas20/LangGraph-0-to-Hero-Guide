@@ -22,7 +22,7 @@ from typing import Annotated
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_chroma import Chroma
 from langgraph.graph import StateGraph, START, END
@@ -31,6 +31,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 load_dotenv()
 
+from modules.llm import get_chat_model, get_embeddings
 
 # ---------- 1. THE KNOWLEDGE BASE ----------
 LESSON_DOCS = [
@@ -42,12 +43,11 @@ LESSON_DOCS = [
     "Repo conventions: state schemas use Pydantic BaseModel, code runs in WSL Ubuntu with uv, model names come from the .env file (OPENAI_MODEL and OPENAI_EMBEDDINGS_MODEL), and lessons are numbered python files at the repo root.",
 ]
 
-embeddings = OpenAIEmbeddings(model=os.getenv("OPENAI_EMBEDDINGS_MODEL", "text-embedding-3-small"))
+embeddings = get_embeddings()
 
 # In-memory Chroma collection built from the docs above.
 # (A real app would pass persist_directory="chroma_db" to keep it on disk.)
 vectorstore = Chroma.from_texts(texts=LESSON_DOCS, embedding=embeddings)
-
 
 # ---------- 2. STATE ----------
 class State(BaseModel):
@@ -62,9 +62,7 @@ class State(BaseModel):
     messages: Annotated[list, add_messages] = []   # appends: conversation grows
     context: list = []                             # overwrites: latest retrieval wins
 
-
-llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
-
+llm = get_chat_model()
 
 # ---------- 3. RETRIEVE NODE ----------
 # Just a node like any other - it happens to talk to a vector store.
@@ -86,7 +84,6 @@ def retrieve(state: State):
         print("   - " + text[:55] + "...")
 
     return {"context": texts}                      # replaces any older context
-
 
 # ---------- 4. GENERATE NODE ----------
 def generate(state: State):
@@ -111,7 +108,6 @@ def generate(state: State):
     reply = llm.invoke([SystemMessage(content=system_prompt)] + state.messages)
     print("generate: answered")
     return {"messages": [reply]}
-
 
 # ---------- 5. THE GRAPH ----------
 graph = StateGraph(State)

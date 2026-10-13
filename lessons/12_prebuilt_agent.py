@@ -17,7 +17,7 @@ Combine with the checkpointer (lesson 5) and the agent remembers turns.
 import os
 
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 from langchain_chroma import Chroma
@@ -26,6 +26,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 load_dotenv()
 
+from modules.llm import get_chat_model, get_embeddings
 
 # ---------- knowledge base (same as lesson 6/7) ----------
 LESSON_DOCS = [
@@ -37,9 +38,8 @@ LESSON_DOCS = [
     "Repo conventions: state schemas use Pydantic BaseModel, code runs in WSL Ubuntu with uv, model names come from the .env file (OPENAI_MODEL and OPENAI_EMBEDDINGS_MODEL), and lessons are numbered python files at the repo root.",
 ]
 
-embeddings = OpenAIEmbeddings(model=os.getenv("OPENAI_EMBEDDINGS_MODEL", "text-embedding-3-small"))
+embeddings = get_embeddings()
 vectorstore = Chroma.from_texts(texts=LESSON_DOCS, embedding=embeddings)
-
 
 # ---------- tools: retrieval + calculation ----------
 @tool
@@ -57,7 +57,6 @@ def search_lessons(query: str) -> str:
     print("   [tool] search_lessons: " + query[:50])
     return "\n\n".join(doc.page_content for doc in docs)
 
-
 @tool
 def add_numbers(a: int, b: int) -> int:
     """Adds two numbers and returns the sum.
@@ -72,8 +71,7 @@ def add_numbers(a: int, b: int) -> int:
     print("   [tool] add_numbers: " + str(a) + " + " + str(b))
     return a + b
 
-
-llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+llm = get_chat_model()
 
 # ---------- THE ONE CALL ----------
 # Same building blocks you know: model with tools, memory, system prompt.

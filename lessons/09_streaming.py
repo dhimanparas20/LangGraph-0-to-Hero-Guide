@@ -17,13 +17,14 @@ from typing import Annotated
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from langchain_openai import ChatOpenAI
+
 from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 
 load_dotenv()
 
+from modules.llm import get_chat_model
 
 class State(BaseModel):
     """Chat state streamed out after every step.
@@ -34,9 +35,7 @@ class State(BaseModel):
 
     messages: Annotated[list, add_messages] = []
 
-
-llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
-
+llm = get_chat_model()
 
 def chat(state: State):
     """Replies with the LLM; each reply becomes a stream event.
@@ -50,14 +49,12 @@ def chat(state: State):
     reply = llm.invoke(state.messages)
     return {"messages": [reply]}
 
-
 graph = StateGraph(State)
 graph.add_node("chat", chat)
 graph.add_edge(START, "chat")
 graph.add_edge("chat", END)
 
 app = graph.compile()
-
 
 # ---------- 1. stream_mode="updates": which node finished, what did it change ----------
 print('=== stream_mode="updates" ===')
