@@ -510,6 +510,130 @@ def print_history(agent, config: dict) -> None:
         print("  " + role + ": " + message.content[:200])
 
 
+def _message_usage(message) -> dict:
+    """Pull token/cost fields off one AIMessage (OpenAI or AI Gateway).
+
+    LangChain puts tokens on ``usage_metadata``; Vercel AI Gateway also
+    embeds ``cost`` / ``market_cost`` / ``gateway_cost`` inside
+    ``response_metadata["token_usage"]``.
+    """
+    usage = getattr(message, "usage_metadata", None) or {}
+    meta = getattr(message, "response_metadata", None) or {}
+    token_usage = meta.get("token_usage") or meta.get("usage") or {}
+
+    input_tokens = usage.get("input_tokens")
+    if input_tokens is None:
+        input_tokens = token_usage.get("prompt_tokens")
+    output_tokens = usage.get("output_tokens")
+    if output_tokens is None:
+        output_tokens = token_usage.get("completion_tokens")
+    total_tokens = usage.get("total_tokens")
+    if total_tokens is None:
+        total_tokens = token_usage.get("total_tokens")
+
+    cost = token_usage.get("cost")
+    if cost is None:
+        cost = token_usage.get("total_cost")
+    market_cost = token_usage.get("market_cost")
+    gateway_cost = token_usage.get("gateway_cost")
+
+    return {
+        "input_tokens": input_tokens or 0,
+        "output_tokens": output_tokens or 0,
+        "total_tokens": total_tokens or 0,
+        "cost": cost,
+        "market_cost": market_cost,
+        "gateway_cost": gateway_cost,
+        "model": meta.get("model_name") or meta.get("model"),
+        "has_usage": bool(usage or token_usage),
+    }
+
+
+def summarize_turn_usage(prior_count: int, messages: list) -> dict | None:
+    """Sum token/cost stats for AI model calls added during this turn.
+
+    An agent turn can include several AI messages (tool-call steps + final
+    answer). We only look at messages appended after ``prior_count``.
+    """
+    new_messages = messages[prior_count:]
+    ai_calls = [m for m in new_messages if getattr(m, "type", None) == "ai"]
+    if not ai_calls:
+        return None
+
+    input_tokens = output_tokens = total_tokens = 0
+    cost = market_cost = gateway_cost = 0.0
+    saw_cost = saw_market = saw_gateway = False
+    models: list[str] = []
+    calls_with_usage = 0
+
+    for message in ai_calls:
+        stats = _message_usage(message)
+        if not stats["has_usage"]:
+            continue
+        calls_with_usage += 1
+        input_tokens += stats["input_tokens"]
+        output_tokens += stats["output_tokens"]
+        total_tokens += stats["total_tokens"]
+        if stats["cost"] is not None:
+            cost += float(stats["cost"])
+            saw_cost = True
+        if stats["market_cost"] is not None:
+            market_cost += float(stats["market_cost"])
+            saw_market = True
+        if stats["gateway_cost"] is not None:
+            gateway_cost += float(stats["gateway_cost"])
+            saw_gateway = True
+        if stats["model"] and stats["model"] not in models:
+            models.append(stats["model"])
+
+    if calls_with_usage == 0:
+        return None
+
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "cost": cost if saw_cost else None,
+        "market_cost": market_cost if saw_market else None,
+        "gateway_cost": gateway_cost if saw_gateway else None,
+        "models": models,
+        "llm_calls": calls_with_usage,
+    }
+
+
+def _format_usd(amount: float) -> str:
+    """Compact USD string for tiny per-reply Gateway costs."""
+    if amount >= 0.01:
+        return f"${amount:.4f}"
+    if amount >= 0.0001:
+        return f"${amount:.6f}"
+    return f"${amount:.8f}"
+
+
+def print_usage_footer(stats: dict | None) -> None:
+    """Print a dim one-line usage summary under the bot reply."""
+    if not stats:
+        return
+    parts = [
+        f"in {stats['input_tokens']}",
+        f"out {stats['output_tokens']}",
+        f"total {stats['total_tokens']}",
+    ]
+    if stats.get("cost") is not None:
+        parts.append(f"cost {_format_usd(stats['cost'])}")
+    if (
+        stats.get("market_cost") is not None
+        and stats.get("cost") is not None
+        and abs(stats["market_cost"] - stats["cost"]) > 1e-12
+    ):
+        parts.append(f"market {_format_usd(stats['market_cost'])}")
+    if stats.get("llm_calls", 1) > 1:
+        parts.append(f"{stats['llm_calls']} llm calls")
+    if stats.get("models"):
+        parts.append(", ".join(stats["models"]))
+    console.print("[dim]" + " · ".join(parts) + "[/]")
+
+
 def chat_turn(agent, config: dict, text: str, logger: ChatLogger, session_id: str) -> None:
     """Runs one question through the agent and prints the answer.
 
@@ -525,6 +649,9 @@ def chat_turn(agent, config: dict, text: str, logger: ChatLogger, session_id: st
     """
     logger.log(session_id, "human", text)
 
+    prior_state = agent.get_state(config)
+    prior_count = len(prior_state.values.get("messages", [])) if prior_state.values else 0
+
     # live spinner while the agent works; the label follows the graph's progress
     with console.status("[dim]bot is thinking...[/]", spinner="dots") as status:
         for event in agent.stream({"messages": [HumanMessage(content=text)]}, config, stream_mode="updates"):
@@ -534,9 +661,11 @@ def chat_turn(agent, config: dict, text: str, logger: ChatLogger, session_id: st
                 else:
                     status.update("[dim]bot is thinking...[/]")
 
-    final = agent.get_state(config).values["messages"][-1]
+    messages = agent.get_state(config).values["messages"]
+    final = messages[-1]
     logger.log(session_id, "ai", final.content)
     console.print(Markdown(final.content))
+    print_usage_footer(summarize_turn_usage(prior_count, messages))
     console.print()
 
 
