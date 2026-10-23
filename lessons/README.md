@@ -14,7 +14,8 @@ uv run lessons/01_first_graph.py
 ```
 
 You need a `.env` file (copy `.env.sample`) with either `OPENAI_API_KEY`
-(direct OpenAI) or `AI_GATEWAY_API_KEY` (Vercel AI Gateway). Lessons load the
+(direct OpenAI), `AI_GATEWAY_API_KEY` (Vercel AI Gateway), or
+`OPENCODE_API_KEY` (OpenCode Console — Zen or the Go plan). Lessons load the
 model via `modules.llm.get_chat_model()`.
 Lessons 1 and up are ordered — each one assumes the previous.
 
